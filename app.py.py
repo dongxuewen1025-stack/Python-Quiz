@@ -23,7 +23,6 @@ ERROR_LIMIT = 3
 
 def load_state():
     """从文件中加载历史进度，若失败则安全返回 None。"""
-    # 部署优化：整个过程使用 try-except 包裹，避免在云端崩溃
     try:
         if os.path.exists(SAVE_FILE):
             with open(SAVE_FILE, "r", encoding="utf-8") as f:
@@ -32,7 +31,6 @@ def load_state():
                     'history_cursor' in data):
                     return data
     except Exception as e:
-        # 在云端环境中，如果读取失败，打印警告但不崩溃
         print(f"Warning: Failed to load progress state safely. Error: {e}")
         pass
     return None
@@ -45,25 +43,29 @@ def save_state():
         'review_history': st.session_state.review_history,
         'history_cursor': st.session_state.history_cursor
     }
-    # 部署优化：使用 try-except 包裹写入过程
     try:
         with open(SAVE_FILE, "w", encoding="utf-8") as f:
             json.dump(data_to_save, f, ensure_ascii=False, indent=4) 
     except Exception as e:
-        # 在云端环境中，如果写入失败（常见于 Streamlit Cloud），
-        # 打印警告但不崩溃，让应用继续运行。
         print(f"Warning: Could not save progress state. Error: {e}")
         pass
 
-def save_current_q_state():
+# --- 【修复点 1：修改函数签名，接受显式代码输入】 ---
+def save_current_q_state(current_code_input=None):
     """将当前的临时状态（solved, hints, errors, code）保存到历史记录中。"""
     if st.session_state.review_history:
         current_state = st.session_state.review_history[st.session_state.history_cursor]
         current_state['user_state']['solved'] = st.session_state.solved
         current_state['user_state']['hint_index'] = st.session_state.hint_index
         current_state['user_state']['error_count'] = st.session_state.error_count
-        current_state['user_state']['user_code'] = st.session_state.code_input_key 
+        
+        # 优先使用传入的 code_input，否则使用 Session State Key 的值
+        code_to_save = current_code_input if current_code_input is not None else st.session_state.code_input_key
+        current_state['user_state']['user_code'] = code_to_save
+        
         st.session_state.review_history[st.session_state.history_cursor] = current_state
+# -----------------------------------------------------------------------------------
+
 
 def load_q_state_from_history():
     """从历史记录中加载状态到当前的 session state。"""
@@ -77,7 +79,7 @@ def load_q_state_from_history():
 
 
 # ------------------------------------------
-# 辅助函数：回调及逻辑
+# 辅助函数：回调及逻辑 (保持不变)
 # ------------------------------------------
 
 def check_code_style(question_title, user_code):
@@ -132,18 +134,16 @@ def reset_current_q_for_redo():
 
 
 # ------------------------------------------
-# 问答区核心逻辑 (智能链接版, 修复状态初始化)
+# 问答区核心逻辑 (保持不变)
 # ------------------------------------------
 
 def process_qa_query():
     """根据用户在问答区的问题，返回预设答案或生成搜索链接。"""
     
-    # === 修复: 确保状态在函数执行前已初始化 ===
     if 'qa_query_input' not in st.session_state:
         st.session_state.qa_query_input = ""
     if 'qa_response' not in st.session_state:
         st.session_state.qa_response = ""
-    # ==========================================
         
     query_text = st.session_state.qa_query_input.strip()
 
@@ -325,7 +325,6 @@ if 'level' not in st.session_state:
         st.session_state.history_cursor = loaded_state.get('history_cursor', 0)
         st.session_state.question_loaded = True 
     else:
-        # 云端部署时通常会走这里，重新从 Level 1 开始
         st.session_state.level = 1 
         st.session_state.score = 0
         st.session_state.question_loaded = False
@@ -358,7 +357,7 @@ total_q_count = len(st.session_state.review_history)
 st.markdown(f"# Python 进阶挑战")
 st.markdown(f"### 难度等级：Lv.{st.session_state.level}")
 
-# --- 【已修复进度条计算，确保值 <= 1.0】---
+# --- 【进度条计算已修复】---
 progress_percent = min(st.session_state.level / 100.0, 1.0) 
 st.progress(progress_percent) 
 
@@ -427,7 +426,10 @@ col_op_1, col_op_2, col_op_3, col_op_4 = st.columns([1, 1, 1, 3])
 with col_op_1:
     if st.button("🚀 提交运行", disabled=should_disable_submit): 
         
-        save_current_q_state() 
+        # --- 【修复点 2：将代码输入值显式传递给保存函数】 ---
+        save_current_q_state(current_code_input=code_input) 
+        # ---------------------------------------------------
+        
         full_code = q['pre_code'] + "\n" + code_input 
         
         try:
@@ -435,13 +437,13 @@ with col_op_1:
         except SyntaxError as e:
             st.error(f"❌ **语法错误：** 请检查缩进和标点。错误：{e}")
             st.session_state.error_count += 1
-            save_current_q_state()
+            save_current_q_state(current_code_input=code_input) # 使用显式输入
             save_state()
             if st.session_state.error_count >= ERROR_LIMIT:
                 st.error(f"❌ **连续错误 {ERROR_LIMIT} 次！** 正确答案已显示。")
                 st.code(q['final_solution'], language='python')
                 st.session_state.solved = True
-                save_current_q_state()
+                save_current_q_state(current_code_input=code_input) # 使用显式输入
                 save_state()
                 st.stop() 
             st.stop()
@@ -462,7 +464,7 @@ with col_op_1:
             if user_output == q['expected']:
                 st.session_state.solved = True 
                 st.session_state.error_count = 0 
-                save_current_q_state()
+                save_current_q_state(current_code_input=code_input) # 使用显式输入
                 save_state() 
                 st.rerun() 
             else:
@@ -470,26 +472,26 @@ with col_op_1:
                 st.warning(f"你的输出:\n{user_output}")
                 st.info(f"期望的正确输出:\n{q['expected']}")
                 st.session_state.error_count += 1
-                save_current_q_state()
+                save_current_q_state(current_code_input=code_input) # 使用显式输入
                 save_state()
                 if st.session_state.error_count >= ERROR_LIMIT:
                     st.error(f"❌ **连续错误 {ERROR_LIMIT} 次！** 正确答案已显示。")
                     st.code(q['final_solution'], language='python')
                     st.session_state.solved = True
-                    save_current_q_state()
+                    save_current_q_state(current_code_input=code_input) # 使用显式输入
                     save_state()
                     st.stop()
                 
         except Exception as e:
             st.error(f"⚠️ **运行错误：** 代码执行出错。详情：{e}")
             st.session_state.error_count += 1
-            save_current_q_state()
+            save_current_q_state(current_code_input=code_input) # 使用显式输入
             save_state()
             if st.session_state.error_count >= ERROR_LIMIT:
                 st.error(f"❌ **连续错误 {ERROR_LIMIT} 次！** 正确答案已显示。")
                 st.code(q['final_solution'], language='python')
                 st.session_state.solved = True
-                save_current_q_state()
+                save_current_q_state(current_code_input=code_input) # 使用显式输入
                 save_state()
                 st.stop()
 
