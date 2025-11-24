@@ -8,7 +8,6 @@ import os
 import ast 
 import time 
 import streamlit.components.v1 as components 
-# 导入 urllib 库：用于对中文进行 URL 编码
 import urllib.parse 
 
 # ------------------------------------------
@@ -133,15 +132,18 @@ def reset_current_q_for_redo():
 
 
 # ------------------------------------------
-# 问答区核心逻辑 (智能链接版)
+# 问答区核心逻辑 (智能链接版, 修复状态初始化)
 # ------------------------------------------
 
 def process_qa_query():
     """根据用户在问答区的问题，返回预设答案或生成搜索链接。"""
+    
+    # === 修复: 确保状态在函数执行前已初始化 ===
     if 'qa_query_input' not in st.session_state:
         st.session_state.qa_query_input = ""
     if 'qa_response' not in st.session_state:
         st.session_state.qa_response = ""
+    # ==========================================
         
     query_text = st.session_state.qa_query_input.strip()
 
@@ -340,7 +342,7 @@ if 'level' not in st.session_state:
     load_q_state_from_history()
     save_state()
 
-# 确保问答状态存在
+# 确保问答状态存在 (防御性检查)
 if 'qa_query_input' not in st.session_state:
     st.session_state.qa_query_input = ""
 if 'qa_response' not in st.session_state:
@@ -355,7 +357,9 @@ total_q_count = len(st.session_state.review_history)
 
 st.markdown(f"# Python 进阶挑战")
 st.markdown(f"### 难度等级：Lv.{st.session_state.level}")
-progress_percent = min(st.session_state.level * 100 / 1000, 100) / 100.0
+
+# --- 【已修复进度条计算，确保值 <= 1.0】---
+progress_percent = min(st.session_state.level / 100.0, 1.0) 
 st.progress(progress_percent) 
 
 st.markdown("---")
