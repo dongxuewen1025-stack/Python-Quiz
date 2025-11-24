@@ -8,7 +8,7 @@ import os
 import ast 
 import time 
 import streamlit.components.v1 as components 
-# 🆕 导入 urllib 库：用于对中文进行 URL 编码，生成安全的链接
+# 导入 urllib 库：用于对中文进行 URL 编码
 import urllib.parse 
 
 # ------------------------------------------
@@ -19,32 +19,42 @@ SAVE_FILE = os.path.join(SCRIPT_DIR, "progress.json")
 ERROR_LIMIT = 3 
 
 # ------------------------------------------
-# 辅助函数：状态管理
+# 辅助函数：状态管理 (已进行云端部署优化)
 # ------------------------------------------
 
 def load_state():
-    """从文件中加载历史进度。"""
-    if os.path.exists(SAVE_FILE):
-        try:
+    """从文件中加载历史进度，若失败则安全返回 None。"""
+    # 部署优化：整个过程使用 try-except 包裹，避免在云端崩溃
+    try:
+        if os.path.exists(SAVE_FILE):
             with open(SAVE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if ('review_history' in data and 
                     'history_cursor' in data):
                     return data
-        except:
-            return None
+    except Exception as e:
+        # 在云端环境中，如果读取失败，打印警告但不崩溃
+        print(f"Warning: Failed to load progress state safely. Error: {e}")
+        pass
     return None
 
 def save_state():
-    """保存当前所有关键状态到文件。"""
+    """保存当前所有关键状态到文件，若失败则安全跳过。"""
     data_to_save = {
         'level': st.session_state.level,
         'score': st.session_state.score,
         'review_history': st.session_state.review_history,
         'history_cursor': st.session_state.history_cursor
     }
-    with open(SAVE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data_to_save, f, ensure_ascii=False, indent=4) 
+    # 部署优化：使用 try-except 包裹写入过程
+    try:
+        with open(SAVE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data_to_save, f, ensure_ascii=False, indent=4) 
+    except Exception as e:
+        # 在云端环境中，如果写入失败（常见于 Streamlit Cloud），
+        # 打印警告但不崩溃，让应用继续运行。
+        print(f"Warning: Could not save progress state. Error: {e}")
+        pass
 
 def save_current_q_state():
     """将当前的临时状态（solved, hints, errors, code）保存到历史记录中。"""
@@ -123,7 +133,7 @@ def reset_current_q_for_redo():
 
 
 # ------------------------------------------
-# 🆕 问答区核心逻辑 (智能链接版)
+# 问答区核心逻辑 (智能链接版)
 # ------------------------------------------
 
 def process_qa_query():
@@ -145,7 +155,7 @@ def process_qa_query():
             "循环": "**关于 循环：**\n重复执行代码块，常用 `for` 和 `while`。",
             "if": "**关于 `if` 条件判断：**\n用于根据条件决定是否执行某段代码。\n结构：`if x > 5: print('Yes')`",
             "缩进": "**关于 Python 缩进：**\n使用 **4 个空格**来定义代码块，这是强制性语法！",
-            "split": "**关于 `split()` 方法：**\n将字符串按分隔符切分成列表。\n用法：`'a,b'.split(',')` 得到 `['a', 'b']`",
+            "split": "**关于 `split()` 方法：**\n将字符串按分隔符切分成列表。\n用法：`'a,b'.split(',')`",
             "列表": "**关于 列表 (List)：**\n存储多个数据的有序集合。\n用法：`nums = [1, 2, 3]`"
         }
         
@@ -156,7 +166,6 @@ def process_qa_query():
                 break
         
         # 2. 外部链接生成
-        # 使用 urllib.parse.quote 对查询文本进行 URL 编码
         encoded_query = urllib.parse.quote(query_text)
         
         google_url = f"https://www.google.com/search?q={encoded_query}+Python教程"
@@ -314,6 +323,7 @@ if 'level' not in st.session_state:
         st.session_state.history_cursor = loaded_state.get('history_cursor', 0)
         st.session_state.question_loaded = True 
     else:
+        # 云端部署时通常会走这里，重新从 Level 1 开始
         st.session_state.level = 1 
         st.session_state.score = 0
         st.session_state.question_loaded = False
