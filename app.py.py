@@ -50,7 +50,6 @@ def save_state():
         print(f"Warning: Could not save progress state. Error: {e}")
         pass
 
-# --- 【修复点 1：修改函数签名，接受显式代码输入】 ---
 def save_current_q_state(current_code_input=None):
     """将当前的临时状态（solved, hints, errors, code）保存到历史记录中。"""
     if st.session_state.review_history:
@@ -60,11 +59,11 @@ def save_current_q_state(current_code_input=None):
         current_state['user_state']['error_count'] = st.session_state.error_count
         
         # 优先使用传入的 code_input，否则使用 Session State Key 的值
+        # 依赖 on_change 机制将最新的代码存入 code_input_key
         code_to_save = current_code_input if current_code_input is not None else st.session_state.code_input_key
         current_state['user_state']['user_code'] = code_to_save
         
         st.session_state.review_history[st.session_state.history_cursor] = current_state
-# -----------------------------------------------------------------------------------
 
 
 def load_q_state_from_history():
@@ -76,11 +75,18 @@ def load_q_state_from_history():
     st.session_state.error_count = q_state['user_state']['error_count']
     st.session_state.code_initial_value = q_state['user_state']['user_code']
     st.session_state.code_input_key = q_state['user_state']['user_code']
-
-
+    # 加载时，将 code_input_key 也赋给新的 widget key 的初始值
+    st.session_state.code_input_widget_key = q_state['user_state']['user_code']
+    
 # ------------------------------------------
-# 辅助函数：回调及逻辑 (保持不变)
+# 辅助函数：回调及逻辑
 # ------------------------------------------
+
+def update_code_input_state():
+    """将文本框的最新值存入 code_input_key，确保状态同步。"""
+    # 将组件最新的值赋给用于逻辑和初始化的 key
+    st.session_state.code_input_key = st.session_state.code_input_widget_key
+    pass
 
 def check_code_style(question_title, user_code):
     """进行简单的代码风格检查。"""
@@ -129,12 +135,13 @@ def reset_current_q_for_redo():
     st.session_state.error_count = 0
     st.session_state.code_initial_value = ""
     st.session_state.code_input_key = "" 
+    st.session_state.code_input_widget_key = ""
     save_current_q_state()
     save_state()
 
 
 # ------------------------------------------
-# 问答区核心逻辑 (保持不变)
+# 问答区核心逻辑
 # ------------------------------------------
 
 def process_qa_query():
@@ -335,6 +342,7 @@ if 'level' not in st.session_state:
 
     st.session_state.code_initial_value = "" 
     st.session_state.code_input_key = "" 
+    st.session_state.code_input_widget_key = "" # 初始化新的 widget key
     st.session_state.qa_query_input = "" 
     st.session_state.qa_response = ""
 
@@ -346,6 +354,9 @@ if 'qa_query_input' not in st.session_state:
     st.session_state.qa_query_input = ""
 if 'qa_response' not in st.session_state:
     st.session_state.qa_response = ""
+# 确保新的 widget key 存在
+if 'code_input_widget_key' not in st.session_state:
+    st.session_state.code_input_widget_key = ""
 
 
 # ------------------------------------------
@@ -357,7 +368,6 @@ total_q_count = len(st.session_state.review_history)
 st.markdown(f"# Python 进阶挑战")
 st.markdown(f"### 难度等级：Lv.{st.session_state.level}")
 
-# --- 【进度条计算已修复】---
 progress_percent = min(st.session_state.level / 100.0, 1.0) 
 st.progress(progress_percent) 
 
@@ -382,12 +392,13 @@ should_disable_submit = st.session_state.solved and is_latest_q
 
 st.markdown("##### ✍️ 在这里输入你的代码：(**已启用 Tab 缩进**)")
 
-# 使用基础输入框 + JS 增强
+# 使用基础输入框 + JS 增强，通过 on_change 确保代码值同步
 code_input = st.text_area(
     label="输入代码:",
-    value=st.session_state.code_initial_value,
+    value=st.session_state.code_input_widget_key, # 使用 widget key 的值
     height=200,
-    key="code_input_key", 
+    key="code_input_widget_key", # 绑定新的 key
+    on_change=update_code_input_state, # 确保输入立即同步到 code_input_key
     disabled=should_disable_submit,
     label_visibility="collapsed"
 )
@@ -426,29 +437,30 @@ col_op_1, col_op_2, col_op_3, col_op_4 = st.columns([1, 1, 1, 3])
 with col_op_1:
     if st.button("🚀 提交运行", disabled=should_disable_submit): 
         
-        # --- 【修复点 2：将代码输入值显式传递给保存函数】 ---
-        save_current_q_state(current_code_input=code_input) 
-        # ---------------------------------------------------
+        # 从 Session State 安全读取最新代码
+        user_input_code = st.session_state.code_input_key
         
-        full_code = q['pre_code'] + "\n" + code_input 
+        save_current_q_state(current_code_input=user_input_code) 
+        
+        full_code = q['pre_code'] + "\n" + user_input_code 
         
         try:
             ast.parse(full_code) 
         except SyntaxError as e:
             st.error(f"❌ **语法错误：** 请检查缩进和标点。错误：{e}")
             st.session_state.error_count += 1
-            save_current_q_state(current_code_input=code_input) # 使用显式输入
+            save_current_q_state(current_code_input=user_input_code)
             save_state()
             if st.session_state.error_count >= ERROR_LIMIT:
                 st.error(f"❌ **连续错误 {ERROR_LIMIT} 次！** 正确答案已显示。")
                 st.code(q['final_solution'], language='python')
                 st.session_state.solved = True
-                save_current_q_state(current_code_input=code_input) # 使用显式输入
+                save_current_q_state(current_code_input=user_input_code)
                 save_state()
                 st.stop() 
             st.stop()
             
-        style_warnings = check_code_style(q['title'], user_code=code_input) 
+        style_warnings = check_code_style(q['title'], user_code=user_input_code) 
         if style_warnings:
             for warning in style_warnings:
                 st.warning(warning)
@@ -464,7 +476,7 @@ with col_op_1:
             if user_output == q['expected']:
                 st.session_state.solved = True 
                 st.session_state.error_count = 0 
-                save_current_q_state(current_code_input=code_input) # 使用显式输入
+                save_current_q_state(current_code_input=user_input_code)
                 save_state() 
                 st.rerun() 
             else:
@@ -472,26 +484,26 @@ with col_op_1:
                 st.warning(f"你的输出:\n{user_output}")
                 st.info(f"期望的正确输出:\n{q['expected']}")
                 st.session_state.error_count += 1
-                save_current_q_state(current_code_input=code_input) # 使用显式输入
+                save_current_q_state(current_code_input=user_input_code)
                 save_state()
                 if st.session_state.error_count >= ERROR_LIMIT:
                     st.error(f"❌ **连续错误 {ERROR_LIMIT} 次！** 正确答案已显示。")
                     st.code(q['final_solution'], language='python')
                     st.session_state.solved = True
-                    save_current_q_state(current_code_input=code_input) # 使用显式输入
+                    save_current_q_state(current_code_input=user_input_code)
                     save_state()
                     st.stop()
                 
         except Exception as e:
             st.error(f"⚠️ **运行错误：** 代码执行出错。详情：{e}")
             st.session_state.error_count += 1
-            save_current_q_state(current_code_input=code_input) # 使用显式输入
+            save_current_q_state(current_code_input=user_input_code)
             save_state()
             if st.session_state.error_count >= ERROR_LIMIT:
                 st.error(f"❌ **连续错误 {ERROR_LIMIT} 次！** 正确答案已显示。")
                 st.code(q['final_solution'], language='python')
                 st.session_state.solved = True
-                save_current_q_state(current_code_input=code_input) # 使用显式输入
+                save_current_q_state(current_code_input=user_input_code)
                 save_state()
                 st.stop()
 
