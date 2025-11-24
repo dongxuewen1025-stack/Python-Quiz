@@ -31,6 +31,7 @@ def load_state():
                     'history_cursor' in data):
                     return data
     except Exception as e:
+        # 在加载失败时，打印警告，但不崩溃应用
         print(f"Warning: Failed to load progress state safely. Error: {e}")
         pass
     return None
@@ -58,6 +59,7 @@ def save_current_q_state(current_code_input=None):
         current_state['user_state']['hint_index'] = st.session_state.hint_index
         current_state['user_state']['error_count'] = st.session_state.error_count
         
+        # 确保保存的是最新的代码
         code_to_save = current_code_input if current_code_input is not None else st.session_state.code_input_key
         current_state['user_state']['user_code'] = code_to_save
         
@@ -71,9 +73,12 @@ def load_q_state_from_history():
     st.session_state.solved = q_state['user_state']['solved']
     st.session_state.hint_index = q_state['user_state']['hint_index']
     st.session_state.error_count = q_state['user_state']['error_count']
-    st.session_state.code_initial_value = q_state['user_state']['user_code']
-    st.session_state.code_input_key = q_state['user_state']['user_code']
-    st.session_state.code_input_widget_key = q_state['user_state']['user_code']
+    
+    # 确保加载历史代码到所有相关 state key
+    history_code = q_state['user_state']['user_code']
+    st.session_state.code_initial_value = history_code
+    st.session_state.code_input_key = history_code
+    st.session_state.code_input_widget_key = history_code
     
 # ------------------------------------------
 # 辅助函数：回调及逻辑
@@ -81,13 +86,16 @@ def load_q_state_from_history():
 
 def update_code_input_state():
     """将文本框的最新值存入 code_input_key，确保状态同步。"""
+    # 此函数在 text_area 更改时调用，是确保持久化代码最新的关键
     st.session_state.code_input_key = st.session_state.code_input_widget_key
+    # 每次更新代码时，也保存到历史记录中，增加实时性
+    save_current_q_state(current_code_input=st.session_state.code_input_key)
+    save_state()
     pass
 
 def check_code_style(question_title, user_code):
     """进行简单的代码风格检查。"""
     warnings = []
-    # 针对 Level 1 的苹果题，提醒不要重复定义变量
     if st.session_state.level == 1 and question_title == "计算苹果总价":
         if "price =" in user_code or "count =" in user_code:
             warnings.append("⚠️ **代码重复警告：** 题目已为你定义了 `price` 和 `count`，请直接使用它们进行计算，不需要重复定义。")
@@ -138,12 +146,11 @@ def reset_current_q_for_redo():
 
 
 # ------------------------------------------
-# 问答区核心逻辑 
+# 问答区核心逻辑 (保持不变)
 # ------------------------------------------
 
 def process_qa_query():
     """根据用户在问答区的问题，返回预设答案或生成搜索链接。"""
-    # 此函数保持不变，因为它不依赖于题库结构。
     
     if 'qa_query_input' not in st.session_state:
         st.session_state.qa_query_input = ""
@@ -206,7 +213,7 @@ def process_qa_query():
 # ------------------------------------------
 st.set_page_config(page_title="Python 进阶闯关", layout="centered")
 
-# === 题库定义 (Level 1-5 固定，保证类型多样化) ===
+# === 题库定义 (Level 1-5 固定) ===
 questions_db = {
     1: [ 
         {"title": "打印问候语", "desc": "请编写代码，打印出字符串 'Hello Python' (注意大小写，不要多空格)。", "pre_code": "", "expected": "Hello Python", "hints": ["使用 print() 函数", "注意引号"], "final_solution": "print('Hello Python')"},
@@ -230,109 +237,130 @@ questions_db = {
 # === 动态题目生成引擎 (Level 6+) ===
 
 def generate_sum_question(level):
-    """Gen 1: 累加求和 (考察 for, range, +=)"""
+    """Gen 1: 复杂累加求和 (考察 for, range, if 过滤, +=) - 行数递增"""
+    # 难度与行数正相关：增加条件判断
     limit = (level - 5) * 4 + 10 
-    total = sum(range(1, limit + 1))
+    
+    # 任务：计算 1 到 limit 中所有能被 3 整除的数字之和
+    total = sum(i for i in range(1, limit + 1) if i % 3 == 0)
+    
     solution = f"""
+# 难度递增: 筛选并求和
 total = 0
 for i in range(1, {limit + 1}):
-    total += i
+    if i % 3 == 0:
+        total += i
 print(total)
-"""
+""" # 5-6 行代码
     return {
-        "title": f"Lv.{level} 挑战：累加求和",
-        "desc": f"请编写代码，使用 `for` 循环计算从 **1 到 {limit}** (包含 {limit}) 的所有整数之和，并打印结果。",
+        "title": f"Lv.{level} 挑战：复杂条件累加",
+        "desc": f"请编写代码，计算从 **1 到 {limit}** 中，所有能被 **3 整除**的整数之和，并打印结果。",
         "pre_code": "",
         "expected": str(total),
-        "hints": ["初始化一个变量 total = 0", f"使用 range(1, {limit + 1})", "在循环中执行 total += i"],
+        "hints": ["使用 `for` 循环和 `range`", "在循环内使用 `if i % 3 == 0` 进行判断"],
         "final_solution": solution.strip()
     }
 
 def generate_loop_print_question(level):
-    """Gen 2: 指定次数打印 (考察基础循环结构)"""
-    count = (level - 5) * 2 + 5
-    word = random.choice(["Streamlit", "Challenge", "Python", "Success", "Code"])
-    expected = "\n".join([word] * count)
+    """Gen 2: 嵌套循环打印 (考察嵌套循环) - 行数递增"""
+    # 难度与行数正相关：增加嵌套和条件
+    size = (level - 5) + 3 
+    
+    # 任务：打印一个 size*size 的星号正方形
+    expected = "\n".join(["*" * size] * size)
+    
     solution = f"""
-for i in range({count}):
-    print("{word}")
-"""
+size = {size}
+for i in range(size):
+    # 嵌套循环或打印
+    print("*" * size)
+""" # 3-4 行代码
     return {
-        "title": f"Lv.{level} 挑战：循环打印",
-        "desc": f"请编写代码，将单词 **'{word}'** 打印 **{count}** 次。",
+        "title": f"Lv.{level} 挑战：绘制正方形",
+        "desc": f"请使用循环，打印一个 **{size}x{size}** 的星号（`*`）正方形。",
         "pre_code": "",
         "expected": expected,
-        "hints": [f"使用 range({count})", "注意缩进", "print函数在循环内"],
+        "hints": [f"使用 range({size})", "在循环内使用 `print('*' * size)`"],
         "final_solution": solution.strip()
     }
 
 def generate_list_math_question(level):
-    """Gen 3: 列表数学运算 (考察 list 遍历和运算)"""
-    list_len = 3 + (level // 6) 
-    nums = [random.randint(1, 4) for _ in range(list_len)]
-    # 任务：计算列表所有元素的乘积
-    product = 1
-    for n in nums:
-        product *= n
+    """Gen 3: 列表平均值计算 (考察 list 遍历, 求和, 长度, 浮点数) - 行数递增"""
+    list_len = 4 + (level // 3) 
+    nums = [random.randint(5, 15) for _ in range(list_len)]
+    
+    # 任务：计算列表所有元素的平均值 (向下取整)
+    average = int(sum(nums) / len(nums))
         
     solution = f"""
 nums = {nums}
-product = 1
+total = 0
 for n in nums:
-    product *= n
-print(product)
-"""
+    total += n
+# 计算平均值并向下取整
+avg = total // len(nums)
+print(avg)
+""" # 5-6 行代码
     return {
-        "title": f"Lv.{level} 挑战：列表乘积",
-        "desc": f"列表 `nums = {nums}` 已定义。请编写代码计算列表中所有数字的**乘积**并打印出来。",
+        "title": f"Lv.{level} 挑战：列表平均值",
+        "desc": f"列表 `nums = {nums}` 已定义。请编写代码计算列表中所有数字的**平均值**（取整数部分），并打印出来。",
         "pre_code": f"nums = {nums}",
-        "expected": str(product),
-        "hints": ["定义 product = 1", "for n in nums:", "product *= n"],
+        "expected": str(average),
+        "hints": ["先求和，再除以 `len(nums)`", "使用整数除法 `//`"],
         "final_solution": solution.strip()
     }
 
 def generate_string_reverse_question(level):
-    """Gen 4: 字符串反转 (考察切片或循环)"""
+    """Gen 4: 字符串切片与拼接 (考察切片/列表操作) - 行数递增"""
     original_word = random.choice(["algorithm", "challenge", "programming", "openai", "python"])
-    reversed_word = original_word[::-1]
+    
+    # 任务：先反转字符串，然后将其转换为大写
+    reversed_upper = original_word[::-1].upper()
     
     solution = f"""
 word = '{original_word}'
+# 反转
 reversed_word = word[::-1]
-print(reversed_word)
-"""
+# 转大写
+final_result = reversed_word.upper()
+print(final_result)
+""" # 4-5 行代码
     return {
-        "title": f"Lv.{level} 挑战：字符串反转",
-        "desc": f"变量 `word = '{original_word}'`。请编写代码将这个字符串反转并打印结果。",
+        "title": f"Lv.{level} 挑战：反转并大写",
+        "desc": f"变量 `word = '{original_word}'`。请编写代码将这个字符串**反转**后，再将所有字母转换为**大写**，并打印结果。",
         "pre_code": f"word = '{original_word}'",
-        "expected": reversed_word,
-        "hints": ["可以使用 `word[::-1]` 切片技巧", "也可以使用 for 循环从后往前拼接"],
+        "expected": reversed_upper,
+        "hints": ["使用 `[::-1]` 进行反转", "使用 `.upper()` 方法"],
         "final_solution": solution.strip()
     }
 
 def generate_conditional_list_filter_question(level):
-    """Gen 5: 条件列表过滤 (考察列表推导式或 if 过滤)"""
-    threshold = (level - 5) + 3 
-    nums = [random.randint(1, 10) for _ in range(5 + (level // 7))]
-    filtered_nums = [n for n in nums if n > threshold]
+    """Gen 5: 列表推导式或双重条件过滤 (考察双重 if) - 行数递增"""
+    # 难度与行数正相关：增加两个条件
+    lower_limit = (level - 5) + 3 
+    upper_limit = lower_limit + 5
+    nums = [random.randint(1, 15) for _ in range(7 + (level // 4))]
     
-    # 任务：筛选大于阈值的数字，并打印筛选后的列表长度
+    # 任务：筛选出在 (lower_limit, upper_limit) 之间且为偶数的数字个数
+    filtered_count = len([n for n in nums if n > lower_limit and n < upper_limit and n % 2 == 0])
     
     solution = f"""
 nums = {nums}
-threshold = {threshold}
-filtered = []
+lower = {lower_limit}
+upper = {upper_limit}
+count = 0
 for n in nums:
-    if n > threshold:
-        filtered.append(n)
-print(len(filtered))
-"""
+    if n > lower and n < upper:
+        if n % 2 == 0:
+            count += 1
+print(count)
+""" # 7-8 行代码
     return {
-        "title": f"Lv.{level} 挑战：筛选列表元素",
-        "desc": f"列表 `nums = {nums}` 已定义。请筛选出列表中所有**大于 {threshold}** 的数字，并打印**筛选后列表的长度**。",
-        "pre_code": f"nums = {nums}\nthreshold = {threshold}",
-        "expected": str(len(filtered_nums)),
-        "hints": [f"使用 if 语句检查 `n > {threshold}`", "用一个新列表存储结果，最后打印新列表的长度"],
+        "title": f"Lv.{level} 挑战：复杂双重筛选",
+        "desc": f"列表 `nums = {nums}`。请编写代码筛选出**大于 {lower_limit} 且小于 {upper_limit}，同时为偶数**的数字的个数，并打印结果。",
+        "pre_code": f"nums = {nums}\nlower = {lower_limit}\nupper = {upper_limit}",
+        "expected": str(filtered_count),
+        "hints": ["需要两个 `if` 条件或一个 `if` + `and`", "最后打印计数器的值"],
         "final_solution": solution.strip()
     }
 
@@ -340,7 +368,6 @@ print(len(filtered))
 def get_question(level):
     """根据难度等级获取题目。"""
     if level in questions_db:
-        # 确保固定关卡总是随机抽取一个
         return random.choice(questions_db[level])
     else:
         # Level 6+ 动态抽取，确保多样性
@@ -364,11 +391,11 @@ def create_new_q_state(q_data):
             'solved': False,
             'hint_index': 0,
             'error_count': 0,
-            'user_code': ""
+            'user_code': "" # 初始代码为空
         }
     }
 
-# === 初始化逻辑 (保持不变) ===
+# === 初始化逻辑 ===
 loaded_state = load_state()
 
 if 'level' not in st.session_state:
@@ -402,11 +429,12 @@ if 'qa_query_input' not in st.session_state:
 if 'qa_response' not in st.session_state:
     st.session_state.qa_response = ""
 if 'code_input_widget_key' not in st.session_state:
-    st.session_state.code_input_widget_key = ""
+    # 确保重启后 text_area 的 key 至少有空字符串
+    st.session_state.code_input_widget_key = st.session_state.code_input_key
 
 
 # ------------------------------------------
-# 2. 界面显示 (保持不变)
+# 2. 界面显示
 # ------------------------------------------
 q = st.session_state.current_q
 total_q_count = len(st.session_state.review_history)
@@ -414,7 +442,6 @@ total_q_count = len(st.session_state.review_history)
 st.markdown(f"# Python 进阶挑战")
 st.markdown(f"### 难度等级：Lv.{st.session_state.level}")
 
-# 进度条基于当前 Level 
 progress_percent = min(st.session_state.level / 100.0, 1.0) 
 st.progress(progress_percent) 
 
@@ -439,13 +466,13 @@ should_disable_submit = st.session_state.solved and is_latest_q
 
 st.markdown("##### ✍️ 在这里输入你的代码：(**已启用 Tab 缩进**)")
 
-# 使用基础输入框 + JS 增强，通过 on_change 确保代码值同步
+# 使用基础输入框，通过 on_change 确保代码值同步和持久化
 code_input = st.text_area(
     label="输入代码:",
-    value=st.session_state.code_input_widget_key, 
+    value=st.session_state.code_input_key, # 使用 code_input_key 作为值来源
     height=200,
-    key="code_input_widget_key", 
-    on_change=update_code_input_state, 
+    key="code_input_widget_key", # widget key
+    on_change=update_code_input_state, # 每次更改都调用保存
     disabled=should_disable_submit,
     label_visibility="collapsed"
 )
@@ -475,7 +502,7 @@ if not should_disable_submit:
 st.markdown("---")
 
 # ------------------------------------------
-# 3. 操作按钮 (反馈逻辑保持不变，没有自动跳转)
+# 3. 操作按钮 
 # ------------------------------------------
 
 col_op_1, col_op_2, col_op_3, col_op_4 = st.columns([1, 1, 1, 3])
@@ -484,6 +511,7 @@ col_op_1, col_op_2, col_op_3, col_op_4 = st.columns([1, 1, 1, 3])
 with col_op_1:
     if st.button("🚀 提交运行", disabled=should_disable_submit): 
         
+        # 确保提交时获取最新的代码
         user_input_code = st.session_state.code_input_key
         
         save_current_q_state(current_code_input=user_input_code) 
@@ -493,16 +521,12 @@ with col_op_1:
         try:
             ast.parse(full_code) 
         except SyntaxError as e:
-            # === 【语法错误反馈】 ===
             st.error(f"❌ **语法错误：** 请检查缩进和标点。错误：{e}")
             st.session_state.error_count += 1
-            
             save_current_q_state(current_code_input=user_input_code)
             save_state()
-            
             if st.session_state.error_count < ERROR_LIMIT:
                  st.warning(f"💡 **提示：** 还可以尝试 {ERROR_LIMIT - st.session_state.error_count} 次。")
-            
             if st.session_state.error_count >= ERROR_LIMIT:
                 st.error(f"❌ **连续错误 {ERROR_LIMIT} 次！** 正确答案已显示。")
                 st.code(q['final_solution'], language='python')
@@ -526,7 +550,6 @@ with col_op_1:
             user_output = f.getvalue().strip()
             
             if user_output == q['expected']:
-                # === 【成功反馈：无自动跳转】 ===
                 st.balloons() 
                 st.success("✅ **恭喜你！代码运行结果正确！**") 
                 
@@ -535,9 +558,7 @@ with col_op_1:
                 save_current_q_state(current_code_input=user_input_code)
                 save_state() 
                 
-                # 页面停在这里，等待用户点击导航按钮
             else:
-                # === 【结果不匹配反馈】 ===
                 st.error("❌ **结果错误：** 输出与期望不符。")
                 st.warning(f"你的输出:\n{user_output}")
                 st.info(f"期望的正确输出:\n{q['expected']}")
@@ -558,7 +579,6 @@ with col_op_1:
                     st.stop()
                 
         except Exception as e:
-            # === 【运行错误反馈】 ===
             st.error(f"⚠️ **运行错误：** 代码执行出错。详情：{e}")
             st.session_state.error_count += 1
             
@@ -608,7 +628,7 @@ if st.session_state.hint_index > 0 and not st.session_state.solved:
             pass 
 
 # ------------------------------------------
-# 4. 导航按钮 (保持不变，用户手动控制跳转)
+# 4. 导航按钮 
 # ------------------------------------------
 
 col_nav_L, col_nav_R = st.columns([1, 1])
@@ -622,7 +642,6 @@ with col_nav_R:
     is_latest_q_cursor = st.session_state.history_cursor == total_q_count - 1
     
     with st.container():
-        # 成功后显示此按钮，等待用户手动点击
         if is_latest_q_cursor and st.session_state.solved:
             if st.button("➡️ 进入下一关", on_click=advance_level_and_clear):
                 pass
@@ -631,7 +650,7 @@ with col_nav_R:
                 pass
         
 # ------------------------------------------
-# 5. 侧边栏与问答区 (保持不变)
+# 5. 侧边栏与问答区 
 # ------------------------------------------
 
 st.sidebar.header("📊 进度")
