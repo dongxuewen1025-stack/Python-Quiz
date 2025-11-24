@@ -87,6 +87,7 @@ def update_code_input_state():
 def check_code_style(question_title, user_code):
     """进行简单的代码风格检查。"""
     warnings = []
+    # 针对 Level 1 的苹果题，提醒不要重复定义变量
     if st.session_state.level == 1 and question_title == "计算苹果总价":
         if "price =" in user_code or "count =" in user_code:
             warnings.append("⚠️ **代码重复警告：** 题目已为你定义了 `price` 和 `count`，请直接使用它们进行计算，不需要重复定义。")
@@ -142,6 +143,7 @@ def reset_current_q_for_redo():
 
 def process_qa_query():
     """根据用户在问答区的问题，返回预设答案或生成搜索链接。"""
+    # 此函数保持不变，因为它不依赖于题库结构。
     
     if 'qa_query_input' not in st.session_state:
         st.session_state.qa_query_input = ""
@@ -151,7 +153,6 @@ def process_qa_query():
     query_text = st.session_state.qa_query_input.strip()
 
     if query_text:
-        # 1. 内置关键词匹配
         keywords = {
             "print": "**关于 `print` 函数：**\n`print()` 是最常用的函数，作用是将内容输出到屏幕。\n用法：`print('Hello Python')`",
             "变量": "**关于 变量：**\n变量是用于存储数据的容器。\n用法：`score = 100`",
@@ -170,14 +171,12 @@ def process_qa_query():
                 internal_answer = v
                 break
         
-        # 2. 外部链接生成
         encoded_query = urllib.parse.quote(query_text)
         
         google_url = f"https://www.google.com/search?q={encoded_query}+Python教程"
         bing_url = f"https://cn.bing.com/search?q={encoded_query}+Python用法"
         gpt_url = f"https://chatgpt.com/?q={encoded_query}" 
 
-        # 3. 组合回复
         if internal_answer:
             st.session_state.qa_response = f"""
             #### 🤖 快速指南 (内置知识库)：
@@ -207,34 +206,39 @@ def process_qa_query():
 # ------------------------------------------
 st.set_page_config(page_title="Python 进阶闯关", layout="centered")
 
-# === 题库定义 (Level 1-3 固定) ===
+# === 题库定义 (Level 1-5 固定，保证类型多样化) ===
 questions_db = {
     1: [ 
         {"title": "打印问候语", "desc": "请编写代码，打印出字符串 'Hello Python' (注意大小写，不要多空格)。", "pre_code": "", "expected": "Hello Python", "hints": ["使用 print() 函数", "注意引号"], "final_solution": "print('Hello Python')"},
         {"title": "计算苹果总价", "desc": "已知 price=5, count=3。请计算总价并打印出来。", "pre_code": "price = 5\ncount = 3", "expected": "15", "hints": ["使用 * 符号", "print(price * count)"], "final_solution": "total = price * count\nprint(total)"}
     ],
     2: [ 
-        {"title": "找偶数", "desc": "列表 `nums = [1, 2, 3, 4]` 已定义。请用 for 循环遍历，只打印出其中的偶数。", "pre_code": "nums = [1, 2, 3, 4]", "expected": "2\n4", "hints": ["for num in nums:", "if num % 2 == 0:"], "final_solution": "for num in nums:\n    if num % 2 == 0:\n        print(num)"}
-    ],
-    3: [ 
+        {"title": "找偶数", "desc": "列表 `nums = [1, 2, 3, 4]` 已定义。请用 for 循环遍历，只打印出其中的偶数。", "pre_code": "nums = [1, 2, 3, 4]", "expected": "2\n4", "hints": ["for num in nums:", "if num % 2 == 0:"], "final_solution": "for num in nums:\n    if num % 2 == 0:\n        print(num)"},
         {"title": "提取邮箱域名", "desc": "变量 `email = 'tom@gmail.com'`。请使用 split 方法提取并打印出 'gmail.com'。", "pre_code": "email = 'tom@gmail.com'", "expected": "gmail.com", "hints": ["email.split('@')", "取列表第2个元素"], "final_solution": "parts = email.split('@')\nprint(parts[1])"}
+    ],
+    3: [
+        {"title": "统计元音字母", "desc": "计算并打印字符串 `s = 'Python'` 中元音字母（a, e, i, o, u）的总个数。", "pre_code": "s = 'Python'\nvowels = 'aeiou'", "expected": "1", "hints": ["初始化 count = 0", "用 for 循环遍历字符串", "用 if letter in vowels: 判断"], "final_solution": "count = 0\nfor char in s.lower():\n    if char in vowels:\n        count += 1\nprint(count)"}
+    ],
+    4: [
+        {"title": "字典库存更新", "desc": "字典 `inventory = {'apple': 10, 'banana': 5}` 已定义。请将 'banana' 的库存数量增加 3，并打印更新后的 'banana' 库存数量。", "pre_code": "inventory = {'apple': 10, 'banana': 5}", "expected": "8", "hints": ["使用方括号 `[]` 访问键值", "使用 `+=` 进行累加操作"], "final_solution": "inventory['banana'] += 3\nprint(inventory['banana'])"}
+    ],
+    5: [
+        {"title": "定义乘方函数", "desc": "请定义一个名为 `power_of_two` 的函数，它接受一个参数 `n`，并返回 `n` 的 2 次方。然后调用此函数，传入 7 并打印结果。", "pre_code": "", "expected": "49", "hints": ["使用 `def` 关键字定义函数", "函数体内使用 `return n ** 2`"], "final_solution": "def power_of_two(n):\n    return n ** 2\n\nprint(power_of_two(7))"}
     ]
 }
 
-# === 动态题目生成引擎 (Level 4+) ===
+# === 动态题目生成引擎 (Level 6+) ===
 
 def generate_sum_question(level):
-    """题型1: 累加求和 (考察 for, range, +=)"""
-    limit = (level - 3) * 5 + 10 
+    """Gen 1: 累加求和 (考察 for, range, +=)"""
+    limit = (level - 5) * 4 + 10 
     total = sum(range(1, limit + 1))
-    
     solution = f"""
 total = 0
 for i in range(1, {limit + 1}):
     total += i
 print(total)
 """
-    
     return {
         "title": f"Lv.{level} 挑战：累加求和",
         "desc": f"请编写代码，使用 `for` 循环计算从 **1 到 {limit}** (包含 {limit}) 的所有整数之和，并打印结果。",
@@ -245,12 +249,10 @@ print(total)
     }
 
 def generate_loop_print_question(level):
-    """题型2: 指定次数打印 (考察基础循环结构)"""
-    count = (level - 3) * 3 + 5
-    word = random.choice(["Code", "Python", "Future", "Data", "AI"])
-    
+    """Gen 2: 指定次数打印 (考察基础循环结构)"""
+    count = (level - 5) * 2 + 5
+    word = random.choice(["Streamlit", "Challenge", "Python", "Success", "Code"])
     expected = "\n".join([word] * count)
-    
     solution = f"""
 for i in range({count}):
     print("{word}")
@@ -265,10 +267,9 @@ for i in range({count}):
     }
 
 def generate_list_math_question(level):
-    """题型3: 列表数学运算 (考察 list 遍历和运算)"""
-    list_len = 3 + (level // 5) 
-    nums = [random.randint(1, 5) for _ in range(list_len)]
-    
+    """Gen 3: 列表数学运算 (考察 list 遍历和运算)"""
+    list_len = 3 + (level // 6) 
+    nums = [random.randint(1, 4) for _ in range(list_len)]
     # 任务：计算列表所有元素的乘积
     product = 1
     for n in nums:
@@ -290,15 +291,65 @@ print(product)
         "final_solution": solution.strip()
     }
 
+def generate_string_reverse_question(level):
+    """Gen 4: 字符串反转 (考察切片或循环)"""
+    original_word = random.choice(["algorithm", "challenge", "programming", "openai", "python"])
+    reversed_word = original_word[::-1]
+    
+    solution = f"""
+word = '{original_word}'
+reversed_word = word[::-1]
+print(reversed_word)
+"""
+    return {
+        "title": f"Lv.{level} 挑战：字符串反转",
+        "desc": f"变量 `word = '{original_word}'`。请编写代码将这个字符串反转并打印结果。",
+        "pre_code": f"word = '{original_word}'",
+        "expected": reversed_word,
+        "hints": ["可以使用 `word[::-1]` 切片技巧", "也可以使用 for 循环从后往前拼接"],
+        "final_solution": solution.strip()
+    }
+
+def generate_conditional_list_filter_question(level):
+    """Gen 5: 条件列表过滤 (考察列表推导式或 if 过滤)"""
+    threshold = (level - 5) + 3 
+    nums = [random.randint(1, 10) for _ in range(5 + (level // 7))]
+    filtered_nums = [n for n in nums if n > threshold]
+    
+    # 任务：筛选大于阈值的数字，并打印筛选后的列表长度
+    
+    solution = f"""
+nums = {nums}
+threshold = {threshold}
+filtered = []
+for n in nums:
+    if n > threshold:
+        filtered.append(n)
+print(len(filtered))
+"""
+    return {
+        "title": f"Lv.{level} 挑战：筛选列表元素",
+        "desc": f"列表 `nums = {nums}` 已定义。请筛选出列表中所有**大于 {threshold}** 的数字，并打印**筛选后列表的长度**。",
+        "pre_code": f"nums = {nums}\nthreshold = {threshold}",
+        "expected": str(len(filtered_nums)),
+        "hints": [f"使用 if 语句检查 `n > {threshold}`", "用一个新列表存储结果，最后打印新列表的长度"],
+        "final_solution": solution.strip()
+    }
+
+
 def get_question(level):
     """根据难度等级获取题目。"""
-    if level <= 3:
+    if level in questions_db:
+        # 确保固定关卡总是随机抽取一个
         return random.choice(questions_db[level])
     else:
+        # Level 6+ 动态抽取，确保多样性
         generators = [
             generate_sum_question,
             generate_loop_print_question,
-            generate_list_math_question
+            generate_list_math_question,
+            generate_string_reverse_question,
+            generate_conditional_list_filter_question
         ]
         selected_gen = random.choice(generators)
         return selected_gen(level)
@@ -317,7 +368,7 @@ def create_new_q_state(q_data):
         }
     }
 
-# === 初始化逻辑 ===
+# === 初始化逻辑 (保持不变) ===
 loaded_state = load_state()
 
 if 'level' not in st.session_state:
@@ -350,13 +401,12 @@ if 'qa_query_input' not in st.session_state:
     st.session_state.qa_query_input = ""
 if 'qa_response' not in st.session_state:
     st.session_state.qa_response = ""
-# 确保 widget key 存在
 if 'code_input_widget_key' not in st.session_state:
     st.session_state.code_input_widget_key = ""
 
 
 # ------------------------------------------
-# 2. 界面显示
+# 2. 界面显示 (保持不变)
 # ------------------------------------------
 q = st.session_state.current_q
 total_q_count = len(st.session_state.review_history)
@@ -364,6 +414,7 @@ total_q_count = len(st.session_state.review_history)
 st.markdown(f"# Python 进阶挑战")
 st.markdown(f"### 难度等级：Lv.{st.session_state.level}")
 
+# 进度条基于当前 Level 
 progress_percent = min(st.session_state.level / 100.0, 1.0) 
 st.progress(progress_percent) 
 
@@ -424,7 +475,7 @@ if not should_disable_submit:
 st.markdown("---")
 
 # ------------------------------------------
-# 3. 操作按钮
+# 3. 操作按钮 (反馈逻辑保持不变，没有自动跳转)
 # ------------------------------------------
 
 col_op_1, col_op_2, col_op_3, col_op_4 = st.columns([1, 1, 1, 3])
@@ -475,8 +526,8 @@ with col_op_1:
             user_output = f.getvalue().strip()
             
             if user_output == q['expected']:
-                # === 【成功反馈：删除 time.sleep 和 st.rerun】 ===
-                st.balloons() # 庆祝效果
+                # === 【成功反馈：无自动跳转】 ===
+                st.balloons() 
                 st.success("✅ **恭喜你！代码运行结果正确！**") 
                 
                 st.session_state.solved = True 
@@ -484,8 +535,7 @@ with col_op_1:
                 save_current_q_state(current_code_input=user_input_code)
                 save_state() 
                 
-                # *** 页面停在这里，等待用户点击导航按钮 ***
-                # st.rerun() # 删除自动跳转
+                # 页面停在这里，等待用户点击导航按钮
             else:
                 # === 【结果不匹配反馈】 ===
                 st.error("❌ **结果错误：** 输出与期望不符。")
@@ -536,7 +586,6 @@ with col_op_2:
 
 # === 重做 ===
 with col_op_3:
-    # 注意：此按钮需要用户点击才会触发 on_click 回调并 reru
     if st.session_state.solved:
         if st.button("🔄 重做", on_click=reset_current_q_for_redo):
             pass
@@ -555,12 +604,11 @@ if st.session_state.hint_index > 0 and not st.session_state.solved:
         st.error("🤯 答案揭晓！")
         st.code(q['final_solution'], language='python')
         
-        # 此处的按钮也会触发状态改变并 reru
         if st.button("✅ 我已理解，进入下一题", on_click=mark_solved_after_hint):
             pass 
 
 # ------------------------------------------
-# 4. 导航按钮
+# 4. 导航按钮 (保持不变，用户手动控制跳转)
 # ------------------------------------------
 
 col_nav_L, col_nav_R = st.columns([1, 1])
@@ -574,7 +622,7 @@ with col_nav_R:
     is_latest_q_cursor = st.session_state.history_cursor == total_q_count - 1
     
     with st.container():
-        # 成功后，这个按钮会显示出来，等待用户手动点击
+        # 成功后显示此按钮，等待用户手动点击
         if is_latest_q_cursor and st.session_state.solved:
             if st.button("➡️ 进入下一关", on_click=advance_level_and_clear):
                 pass
@@ -583,7 +631,7 @@ with col_nav_R:
                 pass
         
 # ------------------------------------------
-# 5. 侧边栏与问答区
+# 5. 侧边栏与问答区 (保持不变)
 # ------------------------------------------
 
 st.sidebar.header("📊 进度")
