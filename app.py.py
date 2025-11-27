@@ -23,16 +23,19 @@ ERROR_LIMIT = 3
 
 def load_state():
     """从文件中加载历史进度，若失败则安全返回 None。"""
+    st.sidebar.markdown("---")
     try:
         if os.path.exists(SAVE_FILE):
             with open(SAVE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if ('review_history' in data and 
-                    'history_cursor' in data):
+                if ('review_history' in data and 'history_cursor' in data):
+                    st.sidebar.success(f"💾 进度加载成功！\n文件路径: {SAVE_FILE}")
                     return data
+        # 如果文件不存在，也提示路径
+        st.sidebar.info(f"💾 进度文件未找到。\n期望路径: {SAVE_FILE}")
     except Exception as e:
-        # 在加载失败时，打印警告，但不崩溃应用
-        print(f"Warning: Failed to load progress state safely. Error: {e}")
+        # 在加载失败时，打印警告，并告知路径不可用
+        st.sidebar.error(f"❌ 进度加载失败 (权限/格式错误)。\n错误: {e}\n路径: {SAVE_FILE}")
         pass
     return None
 
@@ -47,7 +50,9 @@ def save_state():
     try:
         with open(SAVE_FILE, "w", encoding="utf-8") as f:
             json.dump(data_to_save, f, ensure_ascii=False, indent=4) 
+        # st.sidebar.caption("💾 进度已保存。") # 不在每次保存都显示，避免干扰
     except Exception as e:
+        st.sidebar.error(f"❌ 进度保存失败 (请检查写入权限)。")
         print(f"Warning: Could not save progress state. Error: {e}")
         pass
 
@@ -85,12 +90,11 @@ def load_q_state_from_history():
 # ------------------------------------------
 
 def update_code_input_state():
-    """将文本框的最新值存入 code_input_key，确保状态同步。"""
-    # 此函数在 text_area 更改时调用，是确保持久化代码最新的关键
+    """将文本框的最新值存入 code_input_key，并尝试保存进度。"""
     st.session_state.code_input_key = st.session_state.code_input_widget_key
-    # 每次更新代码时，也保存到历史记录中，增加实时性
+    # 实时保存当前输入，保证断点续写
     save_current_q_state(current_code_input=st.session_state.code_input_key)
-    save_state()
+    # 避免频繁写入导致性能问题，只在重要操作时调用 save_state()，这里只保存到 session history
     pass
 
 def check_code_style(question_title, user_code):
@@ -111,7 +115,7 @@ def advance_level_and_clear():
         new_q_state = create_new_q_state(new_q)
         st.session_state.review_history.append(new_q_state)
     load_q_state_from_history()
-    save_state()
+    save_state() # 只有在明确进入新关卡时，强制保存进度
 
 def go_previous_q():
     """导航到上一题（复习）。"""
@@ -238,10 +242,7 @@ questions_db = {
 
 def generate_sum_question(level):
     """Gen 1: 复杂累加求和 (考察 for, range, if 过滤, +=) - 行数递增"""
-    # 难度与行数正相关：增加条件判断
     limit = (level - 5) * 4 + 10 
-    
-    # 任务：计算 1 到 limit 中所有能被 3 整除的数字之和
     total = sum(i for i in range(1, limit + 1) if i % 3 == 0)
     
     solution = f"""
@@ -263,7 +264,6 @@ print(total)
 
 def generate_loop_print_question(level):
     """Gen 2: 嵌套循环打印 (考察嵌套循环) - 行数递增"""
-    # 难度与行数正相关：增加嵌套和条件
     size = (level - 5) + 3 
     
     # 任务：打印一个 size*size 的星号正方形
@@ -336,7 +336,6 @@ print(final_result)
 
 def generate_conditional_list_filter_question(level):
     """Gen 5: 列表推导式或双重条件过滤 (考察双重 if) - 行数递增"""
-    # 难度与行数正相关：增加两个条件
     lower_limit = (level - 5) + 3 
     upper_limit = lower_limit + 5
     nums = [random.randint(1, 15) for _ in range(7 + (level // 4))]
@@ -358,7 +357,7 @@ print(count)
     return {
         "title": f"Lv.{level} 挑战：复杂双重筛选",
         "desc": f"列表 `nums = {nums}`。请编写代码筛选出**大于 {lower_limit} 且小于 {upper_limit}，同时为偶数**的数字的个数，并打印结果。",
-        "pre_code": f"nums = {nums}\nlower = {lower_limit}\nupper = {upper_limit}",
+        "pre_code": f"nums = {lower_limit}\nupper = {upper_limit}\nnums = {nums}",
         "expected": str(filtered_count),
         "hints": ["需要两个 `if` 条件或一个 `if` + `and`", "最后打印计数器的值"],
         "final_solution": solution.strip()
@@ -370,7 +369,6 @@ def get_question(level):
     if level in questions_db:
         return random.choice(questions_db[level])
     else:
-        # Level 6+ 动态抽取，确保多样性
         generators = [
             generate_sum_question,
             generate_loop_print_question,
@@ -395,25 +393,31 @@ def create_new_q_state(q_data):
         }
     }
 
-# === 初始化逻辑 ===
+# === 初始化逻辑 (改进：处理加载失败时的状态维持) ===
 loaded_state = load_state()
 
 if 'level' not in st.session_state:
     if loaded_state:
+        # 成功加载历史进度
         st.session_state.level = loaded_state.get('level', 1)
         st.session_state.score = loaded_state.get('score', 0)
         st.session_state.review_history = loaded_state.get('review_history', [])
         st.session_state.history_cursor = loaded_state.get('history_cursor', 0)
         st.session_state.question_loaded = True 
+        
     else:
-        st.session_state.level = 1 
-        st.session_state.score = 0
-        st.session_state.question_loaded = False
-        st.session_state.review_history = []
-        st.session_state.history_cursor = 0
-        initial_q = get_question(1)
-        st.session_state.review_history.append(create_new_q_state(initial_q))
-
+        # 加载失败，但如果是应用第一次运行，也需要初始化
+        if 'review_history' not in st.session_state or not st.session_state.review_history:
+             # 应用第一次运行，创建初始题
+            st.session_state.level = 1 
+            st.session_state.score = 0
+            st.session_state.question_loaded = False
+            st.session_state.review_history = []
+            st.session_state.history_cursor = 0
+            initial_q = get_question(1)
+            st.session_state.review_history.append(create_new_q_state(initial_q))
+        
+    # 通用初始化，确保所有key存在
     st.session_state.code_initial_value = "" 
     st.session_state.code_input_key = "" 
     st.session_state.code_input_widget_key = "" 
@@ -421,7 +425,7 @@ if 'level' not in st.session_state:
     st.session_state.qa_response = ""
 
     load_q_state_from_history()
-    save_state()
+    save_state() # 首次初始化或加载失败后，保存当前默认状态
 
 # 确保问答状态存在 (防御性检查)
 if 'qa_query_input' not in st.session_state:
@@ -429,7 +433,6 @@ if 'qa_query_input' not in st.session_state:
 if 'qa_response' not in st.session_state:
     st.session_state.qa_response = ""
 if 'code_input_widget_key' not in st.session_state:
-    # 确保重启后 text_area 的 key 至少有空字符串
     st.session_state.code_input_widget_key = st.session_state.code_input_key
 
 
@@ -466,18 +469,23 @@ should_disable_submit = st.session_state.solved and is_latest_q
 
 st.markdown("##### ✍️ 在这里输入你的代码：(**已启用 Tab 缩进**)")
 
+# 动态计算代码输入框的高度，Level 越高，行数越多
+min_height = 200
+# 增加高度，最高限制在 400 像素，以适应更长的代码
+dynamic_height = min(min_height + (st.session_state.level * 15), 400) 
+
 # 使用基础输入框，通过 on_change 确保代码值同步和持久化
 code_input = st.text_area(
     label="输入代码:",
-    value=st.session_state.code_input_key, # 使用 code_input_key 作为值来源
-    height=200,
-    key="code_input_widget_key", # widget key
-    on_change=update_code_input_state, # 每次更改都调用保存
+    value=st.session_state.code_input_key, 
+    height=dynamic_height, # 使用动态高度
+    key="code_input_widget_key", 
+    on_change=update_code_input_state, 
     disabled=should_disable_submit,
     label_visibility="collapsed"
 )
 
-# JS 注入：实现 Tab 键缩进
+# JS 注入：实现 Tab 键缩进 (保持不变)
 if not should_disable_submit:
     js_code = """
     <script>
@@ -511,7 +519,6 @@ col_op_1, col_op_2, col_op_3, col_op_4 = st.columns([1, 1, 1, 3])
 with col_op_1:
     if st.button("🚀 提交运行", disabled=should_disable_submit): 
         
-        # 确保提交时获取最新的代码
         user_input_code = st.session_state.code_input_key
         
         save_current_q_state(current_code_input=user_input_code) 
